@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    body {
+      margin: 0;
+      overflow: hidden;
+      background-color: #87CEEB;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+    }
+
+    #flappy-bird {
+      position: absolute;
+      width: 50px;
+      height: 50px;
+      background-color: #FFD700;
+    }
+
+    .pipe {
+      position: absolute;
+      width: 50px;
+      background-color: #228B22;
+    }
+
+    #score {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      font-size: 24px;
+      color: #fff;
+    }
+  </style>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/handpose"></script>
+  <title>Flappy Bird with Hand Gesture</title>
+</head>
+<body>
+  <div id="flappy-bird"></div>
+  <div id="score">0</div>
+
+  <script>
+    const bird = document.getElementById('flappy-bird');
+    const scoreDisplay = document.getElementById('score');
+
+    let gravity = 1;
+    let jump = -15;
+    let birdPosition = 150;
+    let birdVelocity = 0;
+    let pipes = [];
+    let isGameOver = false;
+    let score = 0;
+
+    function createPipe() {
+      const pipeHeight = Math.floor(Math.random() * 200) + 50;
+      const pipeTop = document.createElement('div');
+      const pipeBottom = document.createElement('div');
+      pipeTop.classList.add('pipe');
+      pipeBottom.classList.add('pipe');
+
+      pipeTop.style.height = `${pipeHeight}px`;
+      pipeTop.style.top = '0';
+
+      pipeBottom.style.height = `${400 - pipeHeight}px`;
+      pipeBottom.style.bottom = '0';
+
+      document.body.appendChild(pipeTop);
+      document.body.appendChild(pipeBottom);
+
+      pipes.push({ top: pipeTop, bottom: pipeBottom, x: window.innerWidth });
+    }
+
+    function updatePipes() {
+      pipes.forEach(pipe => {
+        pipe.x -= 2;
+        pipe.top.style.left = `${pipe.x}px`;
+        pipe.bottom.style.left = `${pipe.x}px`;
+
+        if (pipe.x < -50) {
+          pipe.top.remove();
+          pipe.bottom.remove();
+          pipes.shift();
+        }
+
+        if (pipe.x < birdPosition && pipe.x + 2 > birdPosition - 50) {
+          score++;
+          updateScore();
+        }
+
+        checkCollision(pipe);
+      });
+    }
+
+    function checkCollision(pipe) {
+      const birdRect = bird.getBoundingClientRect();
+      const topRect = pipe.top.getBoundingClientRect();
+      const bottomRect = pipe.bottom.getBoundingClientRect();
+
+      if (
+        birdRect.right > topRect.left &&
+        birdRect.left < topRect.right &&
+        (birdRect.top < topRect.bottom || birdRect.bottom > bottomRect.top)
+      ) {
+        gameOver();
+      }
+    }
+
+    function updateScore() {
+      scoreDisplay.textContent = score;
+    }
+
+    function gameOver() {
+      isGameOver = true;
+      alert(`Game Over! Your score is ${score}.`);
+      resetGame();
+    }
+
+    function resetGame() {
+      birdPosition = 150;
+      birdVelocity = 0;
+      pipes.forEach(pipe => {
+        pipe.top.remove();
+        pipe.bottom.remove();
+      });
+      pipes = [];
+      isGameOver = false;
+      score = 0;
+      updateScore();
+    }
+
+    function gameLoop() {
+      if (!isGameOver) {
+        birdVelocity += gravity;
+        birdPosition += birdVelocity;
+        bird.style.top = `${birdPosition}px`;
+
+        if (birdPosition > window.innerHeight - 50 || birdPosition < 0) {
+          gameOver();
+        }
+
+        if (pipes.length === 0 || pipes[pipes.length - 1].x < window.innerWidth - 300) {
+          createPipe();
+        }
+
+        updatePipes();
+      }
+
+      requestAnimationFrame(gameLoop);
+    }
+
+    async function initHandPose() {
+      const net = await handpose.load();
+      detectHand(net);
+    }
+
+    function detectHand(net) {
+      navigator.mediaDevices.getUserMedia({ video: true })
+        .then((stream) => {
+          const video = document.createElement('video');
+          document.body.appendChild(video);
+          video.srcObject = stream;
+
+          video.addEventListener('loadeddata', () => {
+            video.play();
+            detect(net, video);
+          });
+        })
+        .catch((err) => {
+          console.error(err);
+        });
+    }
+
+    async function detect(net, video) {
+      const canvas = handpose.createCanvasFromMedia(video);
+      document.body.appendChild(canvas);
+
+      while (true) {
+        const predictions = await net.estimateHands(video);
+
+        if (predictions.length > 0) {
+          const hand = predictions[0].boundingBox;
+          const handCenterX = hand[0] + (hand[2] - hand[0]) / 2;
+
+          if (handCenterX < window.innerWidth / 2) {
+            // Jump when the hand is on the left side
+            birdVelocity = jump;
+          }
+        }
+
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+      initHandPose();
+      gameLoop();
+    });
+  </script>
+</body>
+</html>
